@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// -------------------- ENUMS --------------------
+
+enum UserRole {
+  SALESPERSON
+  MANAGER
+}
+
+enum OpportunityStatus {
+  NEW
+  QUALIFYING
+  QUALIFIED
+  IN_PROGRESS
+  ON_HOLD
+  FILLED_WON
+  CLOSED_LOST
+}
+
+enum OpportunityPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum OpportunitySourceType {
+  JOB_PLATFORM
+  EMAIL
+  REFERRAL
+  PHONE
+  MEETING
+  OTHER
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  FREELANCE
+  INTERNSHIP
+  OTHER
+}
+
+enum WorkplaceType {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  NOTE
+  OTHER
+}
+
+enum FollowUpStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+// -------------------- USER --------------------
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(SALESPERSON)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedOpportunities   Opportunity[]              @relation("OpportunityOwner")
+  createdOpportunities Opportunity[]              @relation("OpportunityCreator")
+  activities           Activity[]                 @relation("ActivityAuthor")
+  assignedFollowUps    FollowUp[]                 @relation("FollowUpAssignee")
+  createdFollowUps     FollowUp[]                 @relation("FollowUpCreator")
+  statusChanges        OpportunityStatusHistory[] @relation("StatusChangedBy")
+}
+
+// -------------------- OPPORTUNITY --------------------
+
+model Opportunity {
+  id          Int    @id @default(autoincrement())
+  title       String
+  description String @db.Text
+
+  // Client information
+  companyName        String?
+  clientContactName  String?
+  clientContactEmail String?
+
+  // Job details
+  location               String?
+  employmentType         EmploymentType?
+  workplaceType          WorkplaceType?
+  seniorityLevel         String?
+  experienceMin          Int?
+  experienceMax          Int?
+  salaryMin              Decimal? @db.Decimal(12, 2)
+  salaryMax              Decimal? @db.Decimal(12, 2)
+  salaryCurrency         String?  @db.VarChar(3)
+  openingsCount          Int?
+  requiredSkills         String[] @default([])
+  preferredSkills        String[] @default([])
+  responsibilities       String[] @default([])
+  educationRequirement   String?
+  mustHaveRequirements   String[] @default([])
+  niceToHaveRequirements String[] @default([])
+
+  // Source information
+  sourceType  OpportunitySourceType
+  sourceName  String?
+  sourceUrl   String?
+  sourceNotes String? @db.Text
+
+  // Pipeline information
+  status             OpportunityStatus  @default(NEW)
+  priority           OpportunityPriority @default(MEDIUM)
+  qualificationNotes String? @db.Text
+
+  // User relationships
+  ownerId     Int
+  createdById Int
+
+  owner     User @relation("OpportunityOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdBy User @relation("OpportunityCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // Lifecycle timestamps
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  qualifiedAt DateTime?
+  closedAt    DateTime?
+
+  // Related records
+  activities    Activity[]
+  followUps     FollowUp[]
+  statusHistory OpportunityStatusHistory[]
+
+  @@index([ownerId])
+  @@index([createdById])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+}
+
+// -------------------- ACTIVITY --------------------
+
+model Activity {
+  id            Int          @id @default(autoincrement())
+  opportunityId Int
+  type          ActivityType
+  summary       String
+  details       String?      @db.Text
+  occurredAt    DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  createdById Int
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Restrict)
+  createdBy   User        @relation("ActivityAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([opportunityId, occurredAt])
+  @@index([createdById])
+}
+
+// -------------------- FOLLOW-UP --------------------
+
+model FollowUp {
+  id            Int            @id @default(autoincrement())
+  opportunityId Int
+  title         String
+  description   String?        @db.Text
+  dueAt         DateTime
+  status        FollowUpStatus @default(PENDING)
+  completedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  assignedToId Int?
+  createdById  Int
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Restrict)
+  assignedTo  User?       @relation("FollowUpAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy   User        @relation("FollowUpCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([opportunityId])
+  @@index([assignedToId, status])
+  @@index([status, dueAt])
+}
+
+// -------------------- OPPORTUNITY STATUS HISTORY --------------------
+
+model OpportunityStatusHistory {
+  id            Int               @id @default(autoincrement())
+  opportunityId Int
+  fromStatus    OpportunityStatus?
+  toStatus      OpportunityStatus
+  reason        String?           @db.Text
+  createdAt     DateTime          @default(now())
+
+  changedById Int
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Restrict)
+  changedBy   User        @relation("StatusChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([opportunityId, createdAt])
+  @@index([changedById])
+}
